@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/rancher/rke/services"
+	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
@@ -39,14 +40,24 @@ func (c *Cluster) ValidateCluster() error {
 }
 
 func validateAuthOptions(c *Cluster) error {
-	if c.Authentication.Strategy != DefaultAuthStrategy {
-		return fmt.Errorf("Authentication strategy [%s] is not supported", c.Authentication.Strategy)
+	for S, v := range c.AuthnStrategies {
+		if !v {
+			continue
+		}
+		s := strings.ToLower(S)
+		logrus.Info("Has authn strategy: ", s)
+		if s != AuthnX509Provider && s != AuthnWebhookProvider {
+			return fmt.Errorf("Authentication strategy [%s] is not supported", s)
+		}
+	}
+	if !c.AuthnStrategies[AuthnX509Provider] {
+		return fmt.Errorf("Authentication strategy must contain [%s]", AuthnX509Provider)
 	}
 	return nil
 }
 
 func validateNetworkOptions(c *Cluster) error {
-	if c.Network.Plugin != FlannelNetworkPlugin && c.Network.Plugin != CalicoNetworkPlugin && c.Network.Plugin != CanalNetworkPlugin && c.Network.Plugin != WeaveNetworkPlugin {
+	if c.Network.Plugin != NoNetworkPlugin && c.Network.Plugin != FlannelNetworkPlugin && c.Network.Plugin != CalicoNetworkPlugin && c.Network.Plugin != CanalNetworkPlugin && c.Network.Plugin != WeaveNetworkPlugin {
 		return fmt.Errorf("Network plugin [%s] is not supported", c.Network.Plugin)
 	}
 	return nil

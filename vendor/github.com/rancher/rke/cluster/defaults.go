@@ -10,7 +10,9 @@ import (
 	"github.com/rancher/rke/k8s"
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/services"
+	"github.com/rancher/rke/templates"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -27,8 +29,11 @@ const (
 	DefaultSSHPort        = "22"
 	DefaultDockerSockPath = "/var/run/docker.sock"
 
-	DefaultAuthStrategy      = "x509"
+	DefaultAuthStrategy      = AuthnX509Provider + "," + AuthnWebhookProvider
 	DefaultAuthorizationMode = "rbac"
+
+	DefaultAuthnWebhookFile  = templates.AuthnWebhook
+	DefaultAuthnCacheTimeout = "5s"
 
 	DefaultNetworkPlugin        = "canal"
 	DefaultNetworkCloudProvider = "none"
@@ -104,6 +109,9 @@ func (c *Cluster) setClusterDefaults(ctx context.Context) {
 		c.Nodes[i].SSHAgentAuth = c.SSHAgentAuth
 	}
 
+	if c.Authentication.Webhook == nil {
+		c.Authentication.Webhook = &v3.AuthWebhookConfig{}
+	}
 	if len(c.Authorization.Mode) == 0 {
 		c.Authorization.Mode = DefaultAuthorizationMode
 	}
@@ -137,6 +145,13 @@ func (c *Cluster) setClusterDefaults(ctx context.Context) {
 	c.setClusterImageDefaults()
 	c.setClusterServicesDefaults()
 	c.setClusterNetworkDefaults()
+
+	logrus.Info("Authentication Strategy: ", c.Authentication.Strategy)
+	for _, S := range strings.Split(c.Authentication.Strategy, ",") {
+		s := strings.ToLower(strings.TrimSpace(S))
+		logrus.Info("Enabling authn strategy: ", s)
+		c.AuthnStrategies[s] = true
+	}
 }
 
 func (c *Cluster) setClusterServicesDefaults() {
@@ -163,6 +178,8 @@ func (c *Cluster) setClusterServicesDefaults() {
 		&c.Services.Kubelet.ClusterDomain:                DefaultClusterDomain,
 		&c.Services.Kubelet.InfraContainerImage:          c.SystemImages.PodInfraContainer,
 		&c.Authentication.Strategy:                       DefaultAuthStrategy,
+		&c.Authentication.Webhook.ConfigFile:             DefaultAuthnWebhookFile,
+		&c.Authentication.Webhook.CacheTimeout:           DefaultAuthnCacheTimeout,
 		&c.Services.Etcd.Creation:                        DefaultEtcdBackupCreationPeriod,
 		&c.Services.Etcd.Retention:                       DefaultEtcdBackupRetentionPeriod,
 	}
@@ -259,6 +276,9 @@ func (c *Cluster) setClusterNetworkDefaults() {
 	}
 	if c.Network.CanalNetworkProvider != nil {
 		networkPluginConfigDefaultsMap[CanalIface] = c.Network.CanalNetworkProvider.Iface
+	}
+	if c.Network.WeaveNetworkProvider != nil {
+		networkPluginConfigDefaultsMap[WeavePassword] = c.Network.WeaveNetworkProvider.Password
 	}
 	for k, v := range networkPluginConfigDefaultsMap {
 		setDefaultIfEmptyMapValue(c.Network.Options, k, v)
